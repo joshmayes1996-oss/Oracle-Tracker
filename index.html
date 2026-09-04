@@ -66,7 +66,12 @@
     .check-field { display:flex; gap:7px; align-items:center; min-height:42px; color:#43515d; font-size:.9rem; font-weight:700; }
     .check-field input { width:auto; min-height:auto; }
     .pager { justify-content:space-between; }
-    .now-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(205px,1fr)); gap:10px; margin:13px 0 0; }
+    .clocked-now { display:grid; gap:13px; margin-top:13px; }
+    .team-clock-group { overflow:hidden; border:1px solid #e4eaee; border-radius:13px; background:#fff; }
+    .team-clock-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 13px; background:var(--soft); border-bottom:1px solid #e4eaee; }
+    .team-clock-heading h2 { margin:0; font-size:1rem; }
+    .team-clock-count { color:var(--muted); font-size:.84rem; font-weight:750; white-space:nowrap; }
+    .now-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(205px,1fr)); gap:10px; padding:11px; }
     .now-card { padding:12px; background:var(--soft); border:1px solid #e4eaee; border-radius:11px; }
     .now-card b { display:block; margin-bottom:3px; }.status-void { color:var(--danger); font-weight:750; }.voided { background:#fff7f5; opacity:.76; }
     .empty { padding:20px; color:var(--muted); text-align:center; }
@@ -77,7 +82,7 @@
     @media (max-width:760px) {
       .app { padding:14px; }.head { align-items:flex-start; }.brand-copy { display:none; }.logo { width:116px; }.card { padding:16px; }
       .clock-layout,.split,.stats { grid-template-columns:1fr; }.digital-clock { width:100%; min-width:0; }.field { flex-basis:100%; }.row button,.actions button { flex:1 1 auto; }
-      .filters,.tools { align-items:stretch; }.filters .field,.tools .field { flex-basis:100%; }.check-field { min-height:36px; }.section-head .row { width:100%; }.section-head .row button { flex:1; }
+      .filters,.tools { align-items:stretch; }.filters .field,.tools .field { flex-basis:100%; }.check-field { min-height:36px; }.section-head .row { width:100%; }.section-head .row button { flex:1; }.now-grid { grid-template-columns:repeat(auto-fill,minmax(165px,1fr)); }
     }
     @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition:none!important; } }
   </style>
@@ -118,11 +123,11 @@
     <section id="dashboard" class="card hidden" aria-labelledby="managerTitle">
       <div class="section-head">
         <div><h1 id="managerTitle">Manager dashboard</h1><p id="managerStatus" class="manager-status" aria-live="polite"></p></div>
-        <div class="row"><button id="refresh" class="secondary" type="button">Refresh</button><button id="signOut" type="button">Sign out</button></div>
+        <div class="row"><button id="refresh" class="secondary" type="button">Refresh</button><button id="syncRoster" class="secondary" type="button">Sync roster details</button><button id="signOut" type="button">Sign out</button></div>
       </div>
       <div id="stats" class="stats"></div>
       <p id="warning" class="message warning"></p>
-      <div id="clockedNow" class="now-grid"></div>
+      <div id="clockedNow" class="clocked-now" aria-live="polite"></div>
 
       <div class="split">
         <section class="subpanel">
@@ -190,7 +195,7 @@
     const WORK_TIME_ZONE = 'America/Chicago';
     const RECORDS_PER_PAGE = 25;
     const $ = (selector) => document.querySelector(selector);
-    const state = { db:null, entries:[], employees:[], audit:[], page:1, loading:false };
+    const state = { db:null, entries:[], employees:[], employeesById:new Map(), audit:[], page:1, loading:false };
     const clean = (value) => String(value || '').trim().replace(/\s+/g, ' ');
     const esc = (value) => String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
     const configured = () => PROJECT_URL.startsWith('https://') && PUBLISHABLE_KEY.startsWith('sb_');
@@ -199,6 +204,20 @@
     const workTime = (value) => value ? workFormat.format(new Date(value)) : '—';
     function workDateKey(value) { const parts = Object.fromEntries(workDateFormat.formatToParts(new Date(value)).filter(part => part.type !== 'literal').map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day}`; }
     function calendarKey(date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`; }
+    function normalizeName(value) { return String(value || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' '); }
+    function compactName(value) { return normalizeName(value).replace(/\s/g, ''); }
+    const rosterRows = [
+      ['Anthony Butler','FOT IV (IC4)','Electrical'],['Dyllan Grimes','FOT III (OP4)','Electrical'],['Gerardo Torquemada','FOT III (OP4)','Electrical'],['Hayden Wofford','FOT III (OP4)','Electrical'],['Herman Bray','Operations Manager','N/A - INTERNAL'],['Jack Kaitenge','FOT II (OP3)','General'],['Jesse Watts','FOT II (OP3)','Mechanical'],['Jose Granados','FOT II (OP3)','Electrical'],['Nicholas Massey','FOT II (OP3)','Electrical'],['Ray Bingley','FOT II (OP3)','Mechanical'],['Ronald Foreman','FOT III (OP4)','Electrical'],['Samuel Horth','FOT II (OP3)','General'],["Za'Moderic Odom",'FOT II (OP3)','Electrical'],['Aderemi Adejobi','FOT IV (IC4)','Mechanical'],['Andrew Serrano','FOT III (OP4)','Electrical'],['Arturo Valdez','FOT III (OP4)','Mechanical'],['Blake Flutie','FOT IV (IC4)','Electrical'],['Enrique Cifuentes','FOT III (OP4)','Electrical'],['Jesse-James Garcia','FOT II (OP3)','Electrical'],['Justin Chappell','FOT III (OP4)','Electrical'],['Matthew Archer','FOT II (OP3)','General'],['Mounica Chowdari','FOT III (OP4)','Electrical'],['Richard Merla','FOT II (OP3)','Mechanical'],['Ryan Mallett','FOT II (OP3)','Mechanical'],['Sai Dinesh Repaka','FOT III (OP4)','Electrical'],['Sai Jayanka','FOT III (OP4)','Electrical'],['Waylon Wofford','FOT III (OP4)','Mechanical'],['Christopher Adames','FOT III (OP4)','Electrical'],['Erasmo Ganceres','FOT III (OP4)','General'],['Geoff Orr','FOT IV (IC4)','General'],['Isaiah Starks','FOT IV (IC4)','Electrical'],['Jaya Krishna','FOT III (OP4)','Electrical'],['Jeremiah Deleon','FOT II (OP3)','Electrical'],['Jerry Centeno','FOT II (OP3)','Mechanical'],['Jesus Deleon','FOT II (OP3)','General'],['John Swind','FOT III (OP4)','Mechanical'],['Justin Crocker','FOT II (OP3)','General'],['Kiran Sai Borra','FOT III (OP4)','Electrical'],['Lucian Lebeau','FOT III (OP4)','General'],['Marc Hall','FOT III (OP4)','Mechanical'],['Michael Ware','FOT III (OP4)','Mechanical'],['Michael Williams','FOT III (OP4)','Mechanical'],['Nicholas Vanburen','FOT III (OP4)','Electrical'],['Taylor Belt','FOT III (OP4)','General'],['Warren Sweeney','FOT IV (IC4)','Mechanical'],['Norvin Velasquez','FOT II (OP3)','General'],['Akshaya Immadi','FOT II (OP3)','Electrical'],['Eric Loza','FOT III (OP4)','Mechanical'],['Frederick Hall','FOT IV (IC4)','Electrical'],['Isaiah Rudolph','FOT III (OP4)','Mechanical'],['Jacob Cordell','FOT III (OP4)','Electrical'],['Justin Ransford','FOT III (OP4)','Electrical'],['Kamren Fuller','FOT II (OP3)','Electrical'],['Rohith Irvichetty','FOT III (OP4)','General'],['Sean Duncan','FOT III (OP4)','Electrical'],['Taylor Pate-Bratton','FOT II (OP3)','Mechanical'],['Al Torrez','Operations Manager',''],['Alberto Cortez','FOT II (OP3)','Electrical'],['Alvin Bell','FOT II (OP3)','Mechanical'],['Arturo Martinez','FOT II (OP3)','Electrical'],['Bryan Armando Gallegos','FOT II (OP3)','Mechanical'],['Cadyn Schrank','FOT II (OP3)','General'],['Desmond Piper','FOT III (OP4)','Mechanical'],['Jacey Tarter','FOT IV (IC4)','Mechanical'],['James Davis','FOT II (OP3)','Electrical'],['Jesus Zavala','FOT III (OP4)','Mechanical'],['Joe Michael Acosta','FOT II (OP3)','Mechanical'],['Johnny Adames','FOT II (OP3)','Mechanical'],['Joshua Mayes','FOT II (OP3)','Mechanical'],['Mark Houde','FOT III (OP4)','Mechanical'],['Matthew Kunkel','FOT IV (IC4)','Electrical'],['Nickolas Morgan','FOT III (OP4)','General'],['Phillip Castillo','FOT II (OP3)','Mechanical'],['Steven Lemmond','FOT III (OP4)','Mechanical'],['Yaroslav Odintsov','FOT III (OP4)','Mechanical']
+    ];
+    const ROSTER_PROFILES = new Map(rosterRows.map(([name, fot_level, confirmed_specialty]) => [normalizeName(name), { fot_level, confirmed_specialty }]));
+    const ROSTER_PROFILES_COMPACT = new Map(rosterRows.map(([name, fot_level, confirmed_specialty]) => [compactName(name), { fot_level, confirmed_specialty }]));
+    function rosterProfileForName(name) { return ROSTER_PROFILES.get(normalizeName(name)) || ROSTER_PROFILES_COMPACT.get(compactName(name)) || null; }
+    function profileFor(person = {}) {
+      const stored = person.id ? (state.employeesById.get(person.id) || {}) : {};
+      const roster = rosterProfileForName(`${person.first_name || ''} ${person.last_name || ''}`) || {};
+      return { fot_level:person.fot_level || stored.fot_level || roster.fot_level || '', confirmed_specialty:person.confirmed_specialty || stored.confirmed_specialty || roster.confirmed_specialty || '' };
+    }
+    function profileText(person = {}) { const profile = profileFor(person); return [profile.fot_level, profile.confirmed_specialty].filter(Boolean).join(' · '); }
 
     function setMessage(text = '', type = '') { const target = $('#message'); target.textContent = text; target.className = `message ${type}`; }
     function setManagerStatus(text = '', type = '') { const target = $('#managerStatus'); target.textContent = text; target.className = `manager-status ${type}`; }
@@ -247,7 +266,7 @@
       const pageSize = 1000;
       const rows = [];
       for (let start = 0; ; start += pageSize) {
-        const { data, error } = await state.db.from('time_entries').select('*,employees(first_name,last_name,team)').order('check_in', { ascending:false }).range(start, start + pageSize - 1);
+        const { data, error } = await state.db.from('time_entries').select('*,employees(id,first_name,last_name,team)').order('check_in', { ascending:false }).range(start, start + pageSize - 1);
         if (error) throw error;
         rows.push(...(data || []));
         if (!data || data.length < pageSize) return rows;
@@ -287,9 +306,9 @@
       const includeVoided = $('#includeVoided').checked;
       const term = clean($('#recordSearch').value).toLowerCase();
       return state.entries.filter(entry => {
-        const person = entry.employees || {};
+        const person = entry.employees || {}, profile = profileFor(entry.employees || {});
         const day = workDateKey(entry.check_in);
-        const haystack = `${person.first_name || ''} ${person.last_name || ''} ${person.team || ''} ${entry.note || ''}`.toLowerCase();
+        const haystack = `${person.first_name || ''} ${person.last_name || ''} ${person.team || ''} ${profile.fot_level || ''} ${profile.confirmed_specialty || ''} ${entry.note || ''}`.toLowerCase();
         return (!employee || entry.employee_id === employee) && (!team || person.team === team) && (!from || day >= from) && (!to || day <= to) && (!openOnly || !entry.check_out) && (includeVoided || !entry.voided_at) && (!term || haystack.includes(term));
       });
     }
@@ -304,7 +323,7 @@
       teamSelect.value = selectedTeam;
     }
     function renderEmployees() {
-      $('#employees').innerHTML = table(['Name','Team','Status',''], state.employees.map(person => `<tr><td>${esc(person.first_name)} ${esc(person.last_name)}</td><td>${esc(person.team)}</td><td>Active</td><td><button class="danger" type="button" data-archive="${person.id}">Archive</button></td></tr>`), 'No active employees yet.');
+      $('#employees').innerHTML = table(['Name','Team','FOT level','Confirmed specialty','Status',''], state.employees.map(person => { const profile = profileFor(person); return `<tr><td>${esc(person.first_name)} ${esc(person.last_name)}</td><td>${esc(person.team)}</td><td>${esc(profile.fot_level || '—')}</td><td>${esc(profile.confirmed_specialty || '—')}</td><td>Active</td><td><button class="danger" type="button" data-archive="${person.id}">Archive</button></td></tr>`; }), 'No active employees yet.');
     }
     function renderStats() {
       const valid = state.entries.filter(entry => !entry.voided_at);
@@ -312,7 +331,31 @@
       const overdue = open.filter(entry => Date.now() - new Date(entry.check_in) > 18 * 3600000);
       $('#stats').innerHTML = `<div class="stat"><b>${state.employees.length}</b><span>Active employees</span></div><div class="stat"><b>${open.length}</b><span>Clocked in now</span></div><div class="stat"><b>${valid.length}</b><span>Active time records</span></div>`;
       $('#warning').textContent = overdue.length ? `${overdue.length} open shift${overdue.length === 1 ? '' : 's'} started more than 18 hours ago. Review the records below.` : '';
-      $('#clockedNow').innerHTML = open.length ? open.map(entry => { const person = entry.employees || {}; return `<article class="now-card"><b>${esc(person.first_name)} ${esc(person.last_name)}</b><span class="small">${esc(person.team || 'No team')} · In since ${workTime(entry.check_in)}<br>${hours(entry).toFixed(2)} hours elapsed</span></article>`; }).join('') : '<div class="now-card small">No employees are currently clocked in.</div>';
+      if (!open.length) {
+        $('#clockedNow').innerHTML = '<div class="now-card small">No employees are currently clocked in.</div>';
+        return;
+      }
+      const teamOrder = ['Manager','Management','Team Lead','Team 1','Team 2','Team 3','Team 4','Team 5'];
+      const byTeam = new Map();
+      open.forEach(entry => {
+        const team = clean((entry.employees || {}).team) || 'No team assigned';
+        if (!byTeam.has(team)) byTeam.set(team, []);
+        byTeam.get(team).push(entry);
+      });
+      const teamNames = [...byTeam.keys()].sort((a, b) => {
+        const aIndex = teamOrder.indexOf(a), bIndex = teamOrder.indexOf(b);
+        return (aIndex < 0 ? 99 : aIndex) - (bIndex < 0 ? 99 : bIndex) || a.localeCompare(b);
+      });
+      $('#clockedNow').innerHTML = teamNames.map(team => {
+        const entries = byTeam.get(team).sort((a, b) => `${a.employees?.last_name || ''} ${a.employees?.first_name || ''}`.localeCompare(`${b.employees?.last_name || ''} ${b.employees?.first_name || ''}`));
+        const label = `${entries.length} clocked in`;
+        const cards = entries.map(entry => {
+          const person = entry.employees || {};
+          const profile = profileText(person);
+          return `<article class="now-card"><b>${esc(person.first_name)} ${esc(person.last_name)}</b><span class="small">${profile ? `${esc(profile)}<br>` : ''}In since ${workTime(entry.check_in)}<br>${hours(entry).toFixed(2)} hours elapsed</span></article>`;
+        }).join('');
+        return `<section class="team-clock-group"><div class="team-clock-heading"><h2>${esc(team)}</h2><span class="team-clock-count">${esc(label)}</span></div><div class="now-grid">${cards}</div></section>`;
+      }).join('');
     }
     function renderWeekly() {
       const start = weekStart($('#week').value);
@@ -331,10 +374,10 @@
       const pages = Math.max(1, Math.ceil(rows.length / RECORDS_PER_PAGE));
       state.page = Math.min(state.page, pages);
       const visible = rows.slice((state.page - 1) * RECORDS_PER_PAGE, state.page * RECORDS_PER_PAGE);
-      $('#records').innerHTML = table(['Employee','Team','Check in','Check out','Hours','Note','Status',''], visible.map(entry => {
-        const person = entry.employees || {};
+      $('#records').innerHTML = table(['Employee','Team','FOT level','Confirmed specialty','Check in','Check out','Hours','Note','Status',''], visible.map(entry => {
+        const person = entry.employees || {}, profile = profileFor(entry.employees || {});
         const voided = Boolean(entry.voided_at);
-        return `<tr class="${voided ? 'voided' : ''}"><td>${esc(person.first_name)} ${esc(person.last_name)}</td><td>${esc(person.team)}</td><td>${workTime(entry.check_in)}</td><td>${entry.check_out ? workTime(entry.check_out) : 'Open'}</td><td>${hours(entry).toFixed(2)}</td><td class="note">${esc(entry.note || '—')}</td><td>${voided ? `<span class="status-void">Voided: ${esc(entry.void_reason || 'No reason entered')}</span>` : 'Active'}</td><td>${voided ? '' : `<button class="danger" type="button" data-void-record="${entry.id}">Void</button>`}</td></tr>`;
+        return `<tr class="${voided ? 'voided' : ''}"><td>${esc(person.first_name)} ${esc(person.last_name)}</td><td>${esc(person.team)}</td><td>${esc(profile.fot_level || '—')}</td><td>${esc(profile.confirmed_specialty || '—')}</td><td>${workTime(entry.check_in)}</td><td>${entry.check_out ? workTime(entry.check_out) : 'Open'}</td><td>${hours(entry).toFixed(2)}</td><td class="note">${esc(entry.note || '—')}</td><td>${voided ? `<span class="status-void">Voided: ${esc(entry.void_reason || 'No reason entered')}</span>` : 'Active'}</td><td>${voided ? '' : `<button class="danger" type="button" data-void-record="${entry.id}">Void</button>`}</td></tr>`;
       }), 'No records match these filters.');
       $('#recordPager').innerHTML = `<span class="small">${rows.length} record${rows.length === 1 ? '' : 's'} · Page ${state.page} of ${pages}</span><span class="row"><button id="previousPage" class="secondary" type="button" ${state.page === 1 ? 'disabled' : ''}>Previous</button><button id="nextPage" class="secondary" type="button" ${state.page === pages ? 'disabled' : ''}>Next</button></span>`;
     }
@@ -356,13 +399,15 @@
         if (employees.error) throw employees.error;
         if (audit.error) throw audit.error;
         state.employees = employees.data || [];
+        state.employeesById = new Map(state.employees.map(person => [person.id, person]));
         state.entries = entries;
         state.audit = audit.data || [];
         renderFilterOptions();
         renderEmployees();
         renderDashboard();
         updateBackupStatus();
-        setManagerStatus(`Updated ${workTime(new Date())}`, 'success');
+        const rosterMatches = state.employees.filter(person => rosterProfileForName(`${person.first_name || ''} ${person.last_name || ''}`)).length;
+        setManagerStatus(`Updated ${workTime(new Date())} · ${rosterMatches} roster profile${rosterMatches === 1 ? '' : 's'} matched.`, 'success');
       } catch (error) {
         setManagerStatus(`Could not refresh dashboard: ${error.message || 'Unknown error'}`, 'error');
         throw error;
@@ -399,6 +444,25 @@
       });
     });
     $('#refresh').addEventListener('click', () => withButton($('#refresh'), 'Refreshing…', () => loadDashboard()));
+    $('#syncRoster').addEventListener('click', async () => {
+      const matches = state.employees.map(person => ({ person, profile:rosterProfileForName(`${person.first_name} ${person.last_name}`) })).filter(item => item.profile);
+      if (!matches.length) return setManagerStatus('No active tracker accounts matched the roster names.', 'warning');
+      await withButton($('#syncRoster'), `Syncing ${matches.length}…`, async () => {
+        let saved = 0;
+        for (const { person, profile } of matches) {
+          const { data, error } = await state.db.from('employees').update({ fot_level:profile.fot_level, confirmed_specialty:profile.confirmed_specialty || null }).eq('id', person.id).select('id');
+          if (error) throw error;
+          if (!data || data.length !== 1) throw new Error(`Supabase did not allow the update for ${person.first_name} ${person.last_name}.`);
+          saved++;
+        }
+        await loadDashboard(false);
+        setManagerStatus(`Saved FOT level and specialty for ${saved} existing tracker account${saved === 1 ? '' : 's'}.`, 'success');
+      }).catch(error => {
+        const detail = error.message || 'Unknown error';
+        const hint = /fot_level|confirmed_specialty|column/i.test(detail) ? ' Run the roster SQL file once in Supabase, then try again.' : '';
+        setManagerStatus(`Could not save roster details: ${detail}.${hint}`, 'error');
+      });
+    });
     $('#signOut').addEventListener('click', async () => { await state.db.auth.signOut(); localStorage.removeItem('oracle-time-safety-snapshot'); $('#dashboard').classList.add('hidden'); setManagerStatus(); });
     $('#add').addEventListener('click', async () => {
       if (!state.db) return;
@@ -436,7 +500,7 @@
     $('#clearFilters').addEventListener('click', () => { ['filterEmployee','filterTeam','from','to','recordSearch'].forEach(id => $("#" + id).value = ''); $('#openOnly').checked = false; $('#includeVoided').checked = false; state.page = 1; renderRecords(); });
     $('#week').addEventListener('change', renderWeekly);
     $('#recordPager').addEventListener('click', event => { if (event.target.id === 'previousPage') { state.page--; renderRecords(); } if (event.target.id === 'nextPage') { state.page++; renderRecords(); } });
-    $('#exportRecords').addEventListener('click', () => csv('oracle-filtered-records.csv', [['Employee','Team','Check in','Check out','Hours','Note','Status','Void reason'], ...filteredRecords().map(entry => { const person = entry.employees || {}; return [`${person.first_name || ''} ${person.last_name || ''}`.trim(), person.team || '', entry.check_in, entry.check_out || '', hours(entry).toFixed(2), entry.note || '', entry.voided_at ? 'Voided' : 'Active', entry.void_reason || '']; })]));
+    $('#exportRecords').addEventListener('click', () => csv('oracle-filtered-records.csv', [['Employee','Team','FOT level','Confirmed specialty','Check in','Check out','Hours','Note','Status','Void reason'], ...filteredRecords().map(entry => { const person = entry.employees || {}, profile = profileFor(person); return [`${person.first_name || ''} ${person.last_name || ''}`.trim(), person.team || '', profile.fot_level || '', profile.confirmed_specialty || '', entry.check_in, entry.check_out || '', hours(entry).toFixed(2), entry.note || '', entry.voided_at ? 'Voided' : 'Active', entry.void_reason || '']; })]));
     $('#exportWeek').addEventListener('click', () => {
       const start = weekStart($('#week').value), end = new Date(start); end.setDate(end.getDate() + 7);
       const startKey = calendarKey(start), endKey = calendarKey(end);
@@ -444,7 +508,7 @@
       state.entries.filter(entry => !entry.voided_at && workDateKey(entry.check_in) >= startKey && workDateKey(entry.check_in) < endKey).forEach(entry => { const person = entry.employees || {}; const name = `${person.first_name || ''} ${person.last_name || ''}`.trim() || 'Unknown employee'; totals[name] = (totals[name] || 0) + hours(entry); });
       csv(`oracle-weekly-hours-${$('#week').value || weekValue()}.csv`, [['Employee','Hours'], ...Object.entries(totals).sort(([a],[b]) => a.localeCompare(b)).map(([name,total]) => [name, total.toFixed(2)])]);
     });
-    $('#backupAll').addEventListener('click', () => csv(`oracle-full-backup-${new Date().toISOString().slice(0,10)}.csv`, [['Employee','Team','Check in','Check out','Hours','Note','Status','Void reason'], ...state.entries.map(entry => { const person = entry.employees || {}; return [`${person.first_name || ''} ${person.last_name || ''}`.trim(), person.team || '', entry.check_in, entry.check_out || '', hours(entry).toFixed(2), entry.note || '', entry.voided_at ? 'Voided' : 'Active', entry.void_reason || '']; })]));
+    $('#backupAll').addEventListener('click', () => csv(`oracle-full-backup-${new Date().toISOString().slice(0,10)}.csv`, [['Employee','Team','FOT level','Confirmed specialty','Check in','Check out','Hours','Note','Status','Void reason'], ...state.entries.map(entry => { const person = entry.employees || {}, profile = profileFor(person); return [`${person.first_name || ''} ${person.last_name || ''}`.trim(), person.team || '', profile.fot_level || '', profile.confirmed_specialty || '', entry.check_in, entry.check_out || '', hours(entry).toFixed(2), entry.note || '', entry.voided_at ? 'Voided' : 'Active', entry.void_reason || '']; })]));
 
     if (configured() && window.supabase) state.db = window.supabase.createClient(PROJECT_URL, PUBLISHABLE_KEY);
     else setMessage('Manager setup needed: add the Supabase Project URL and publishable key to this file first.', 'warning');
