@@ -138,8 +138,6 @@
             <label class="field">First name<input id="newFirst" placeholder="First name"></label>
             <label class="field">Last name<input id="newLast" placeholder="Last name"></label>
             <label class="field">Team<select id="team"><option>Manager</option><option>Team Lead</option><option>Team 1</option><option>Team 2</option><option>Team 3</option><option>Team 4</option><option>Team 5</option><option>Management</option></select></label>
-            <label class="field">FOT level<select id="fotLevel"><option value="">Not set / use roster match</option><option>FOT I</option><option>FOT II</option><option>FOT III</option><option>FOT IV</option><option>Operations Manager</option></select></label>
-            <label class="field">FOT sub-level<select id="fotSublevel"><option value="">Not set</option><option value="OP3">(OP3)</option><option value="OP4">(OP4)</option><option value="IC4">(IC4)</option></select></label>
             <button id="add" type="button">Save employee</button><button id="cancelEmployeeEdit" class="ghost hidden" type="button">Cancel edit</button>
           </div>
           <p class="small">Saving an archived employee’s name restores their access. Past records remain saved.</p>
@@ -252,8 +250,6 @@
       return { fot_level:person.fot_level || stored.fot_level || roster.fot_level || '', confirmed_specialty:person.confirmed_specialty || stored.confirmed_specialty || roster.confirmed_specialty || '' };
     }
     function profileText(person = {}) { const profile = profileFor(person); return [profile.fot_level, profile.confirmed_specialty].filter(Boolean).join(' · '); }
-    function splitFotLevel(value) { const full = clean(value); const match = /^(.*?)\s*\(([^)]+)\)$/.exec(full); return match ? { level:clean(match[1]), sublevel:clean(match[2]) } : { level:full, sublevel:'' }; }
-    function composeFotLevel(level, sublevel) { const main = clean(level), sub = clean(sublevel); return main ? (sub ? `${main} (${sub})` : main) : ''; }
 
     function setMessage(text = '', type = '') { const target = $('#message'); target.textContent = text; target.className = `message ${type}`; }
     function setManagerStatus(text = '', type = '') { const target = $('#managerStatus'); target.textContent = text; target.className = `manager-status ${type}`; }
@@ -301,7 +297,7 @@
     }
     function clearEmployeeEditor() {
       state.editingEmployeeId = null;
-      $('#newFirst').value = ''; $('#newLast').value = ''; $('#team').value = 'Manager'; $('#fotLevel').value = ''; $('#fotSublevel').value = '';
+      $('#newFirst').value = ''; $('#newLast').value = ''; $('#team').value = 'Manager';
       $('#employeeFormTitle').textContent = 'Add or restore employee';
       $('#add').textContent = 'Save employee';
       $('#cancelEmployeeEdit').classList.add('hidden');
@@ -313,9 +309,6 @@
       $('#newFirst').value = person.first_name || '';
       $('#newLast').value = person.last_name || '';
       $('#team').value = person.team || 'Manager';
-      const fot = splitFotLevel(profileFor(person).fot_level);
-      $('#fotLevel').value = fot.level;
-      $('#fotSublevel').value = fot.sublevel;
       $('#employeeFormTitle').textContent = `Edit employee · ${person.first_name || ''} ${person.last_name || ''}`.trim();
       $('#add').textContent = 'Save changes';
       $('#cancelEmployeeEdit').classList.remove('hidden');
@@ -568,7 +561,7 @@
       const first = clean($('#newFirst').value), last = clean($('#newLast').value);
       if (!first || !last) return setManagerStatus('Enter both a first and last name before saving.', 'warning');
       await withButton($('#add'), 'Saving…', async () => {
-        const payload = { first_name:first, last_name:last, team:$('#team').value, fot_level:composeFotLevel($('#fotLevel').value, $('#fotSublevel').value) || null };
+        const payload = { first_name:first, last_name:last, team:$('#team').value };
         const { error } = state.editingEmployeeId
           ? await state.db.from('employees').update(payload).eq('id', state.editingEmployeeId)
           : await state.db.from('employees').upsert({ ...payload, active:true }, { onConflict:'first_name,last_name' });
