@@ -140,6 +140,7 @@
             <label class="field">Team<select id="team"><option>Manager</option><option>Team Lead</option><option>Team 1</option><option>Team 2</option><option>Team 3</option><option>Team 4</option><option>Team 5</option><option>Management</option></select></label>
             <label class="field">FOT level<select id="fotLevel"><option value="">Not set / use roster match</option><option>FOT I</option><option>FOT II</option><option>FOT III</option><option>FOT IV</option><option>Operations Manager</option></select></label>
             <label class="field">FOT sub-level<select id="fotSublevel"><option value="">Not set</option><option value="OP3">(OP3)</option><option value="OP4">(OP4)</option><option value="IC4">(IC4)</option></select></label>
+            <label class="field">Confirmed specialty<select id="specialty"><option value="">Not set / use roster match</option><option>Electrical</option><option>Mechanical</option><option>General</option><option>N/A - INTERNAL</option></select></label>
             <button id="add" type="button">Save employee</button><button id="cancelEmployeeEdit" class="ghost hidden" type="button">Cancel edit</button>
           </div>
           <p class="small">Saving an archived employee’s name restores their access. Past records remain saved.</p>
@@ -301,7 +302,7 @@
     }
     function clearEmployeeEditor() {
       state.editingEmployeeId = null;
-      $('#newFirst').value = ''; $('#newLast').value = ''; $('#team').value = 'Manager'; $('#fotLevel').value = ''; $('#fotSublevel').value = '';
+      $('#newFirst').value = ''; $('#newLast').value = ''; $('#team').value = 'Manager'; $('#fotLevel').value = ''; $('#fotSublevel').value = ''; $('#specialty').value = '';
       $('#employeeFormTitle').textContent = 'Add or restore employee';
       $('#add').textContent = 'Save employee';
       $('#cancelEmployeeEdit').classList.add('hidden');
@@ -316,6 +317,7 @@
       const fot = splitFotLevel(profileFor(person).fot_level);
       $('#fotLevel').value = fot.level;
       $('#fotSublevel').value = fot.sublevel;
+      $('#specialty').value = profileFor(person).confirmed_specialty || '';
       $('#employeeFormTitle').textContent = `Edit employee · ${person.first_name || ''} ${person.last_name || ''}`.trim();
       $('#add').textContent = 'Save changes';
       $('#cancelEmployeeEdit').classList.remove('hidden');
@@ -568,7 +570,7 @@
       const first = clean($('#newFirst').value), last = clean($('#newLast').value);
       if (!first || !last) return setManagerStatus('Enter both a first and last name before saving.', 'warning');
       await withButton($('#add'), 'Saving…', async () => {
-        const payload = { first_name:first, last_name:last, team:$('#team').value, fot_level:composeFotLevel($('#fotLevel').value, $('#fotSublevel').value) || null };
+        const payload = { first_name:first, last_name:last, team:$('#team').value, fot_level:composeFotLevel($('#fotLevel').value, $('#fotSublevel').value) || null, confirmed_specialty:$('#specialty').value || null };
         const { error } = state.editingEmployeeId
           ? await state.db.from('employees').update(payload).eq('id', state.editingEmployeeId)
           : await state.db.from('employees').upsert({ ...payload, active:true }, { onConflict:'first_name,last_name' });
