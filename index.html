@@ -75,6 +75,11 @@
     .now-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(205px,1fr)); gap:10px; padding:11px; }
     .now-card { padding:12px; background:var(--soft); border:1px solid #e4eaee; border-radius:11px; }
     .now-card b { display:block; margin-bottom:3px; }.status-void { color:var(--danger); font-weight:750; }.voided { background:#fff7f5; opacity:.76; }
+    .roster-row-in { background:#ecf9f0; }.roster-row-out { background:#fff1f0; }
+    .roster-name { display:inline-flex; align-items:center; gap:7px; font-weight:800; }
+    .roster-name::before { content:''; width:9px; height:9px; border-radius:999px; background:currentColor; }
+    .roster-name.in { color:#137445; }.roster-name.out { color:#b12f25; }
+    .clock-status { font-weight:800; }.clock-status.in { color:#137445; }.clock-status.out { color:#b12f25; }
     .empty { padding:20px; color:var(--muted); text-align:center; }
     dialog { width:min(420px,calc(100% - 32px)); padding:0; color:var(--ink); border:0; border-radius:16px; box-shadow:0 24px 70px rgba(0,0,0,.45); }
     dialog.wide { width:min(680px,calc(100% - 32px)); }
@@ -174,11 +179,6 @@
         <div id="recordPager" class="tools pager"></div>
       </section>
 
-      <section style="margin-top:20px">
-        <h2>Manager edit history</h2>
-        <p class="small">Edit history is protected and cannot be cleared from this page.</p>
-        <div id="audit" class="table-wrap"></div>
-      </section>
     </section>
   </main>
 
@@ -408,7 +408,11 @@
       teamSelect.value = selectedTeam;
     }
     function renderEmployees() {
-      $('#employees').innerHTML = table(['Name','Team','FOT level','Confirmed specialty','Status','Actions'], state.employees.map(person => { const profile = profileFor(person); return `<tr><td>${esc(person.first_name)} ${esc(person.last_name)}</td><td>${esc(person.team)}</td><td>${esc(profile.fot_level || '—')}</td><td>${esc(profile.confirmed_specialty || '—')}</td><td>Active</td><td><div class="row"><button class="secondary" type="button" data-edit-employee="${person.id}">Edit</button><button class="danger" type="button" data-archive="${person.id}">Archive</button></div></td></tr>`; }), 'No active employees yet.');
+      const openIds = new Set(state.entries.filter(entry => !entry.voided_at && !entry.check_out).map(entry => entry.employee_id));
+      $('#employees').innerHTML = table(['Name','Team','FOT level','Confirmed specialty','Clock status','Actions'], state.employees.map(person => {
+        const profile = profileFor(person), clockedIn = openIds.has(person.id);
+        return `<tr class="${clockedIn ? 'roster-row-in' : 'roster-row-out'}"><td><span class="roster-name ${clockedIn ? 'in' : 'out'}">${esc(person.first_name)} ${esc(person.last_name)}</span></td><td>${esc(person.team)}</td><td>${esc(profile.fot_level || '—')}</td><td>${esc(profile.confirmed_specialty || '—')}</td><td><span class="clock-status ${clockedIn ? 'in' : 'out'}">${clockedIn ? 'Clocked in' : 'Not clocked in'}</span></td><td><div class="row"><button class="secondary" type="button" data-edit-employee="${person.id}">Edit</button><button class="danger" type="button" data-archive="${person.id}">Archive</button></div></td></tr>`;
+      }), 'No active employees yet.');
     }
     function renderStats() {
       const valid = state.entries.filter(entry => !entry.voided_at);
@@ -466,27 +470,21 @@
       }), 'No records match these filters.');
       $('#recordPager').innerHTML = `<span class="small">${rows.length} record${rows.length === 1 ? '' : 's'} · Page ${state.page} of ${pages}</span><span class="row"><button id="previousPage" class="secondary" type="button" ${state.page === 1 ? 'disabled' : ''}>Previous</button><button id="nextPage" class="secondary" type="button" ${state.page === pages ? 'disabled' : ''}>Next</button></span>`;
     }
-    function renderAudit() {
-      $('#audit').innerHTML = table(['When','Action','Area'], state.audit.map(item => `<tr><td>${workTime(item.occurred_at)}</td><td>${esc(item.action)}</td><td>${esc(item.entity)}</td></tr>`), 'No manager edits recorded yet.');
-    }
-    function renderDashboard() { renderStats(); renderWeekly(); renderRecords(); renderAudit(); }
+    function renderDashboard() { renderStats(); renderWeekly(); renderRecords(); }
     function updateBackupStatus() { $('#backupStatus').textContent = `Loaded ${state.entries.length} record${state.entries.length === 1 ? '' : 's'} · use Full backup CSV to save a copy.`; }
     async function loadDashboard(showProgress = true) {
       if (!state.db || state.loading) return;
       state.loading = true;
       if (showProgress) setManagerStatus('Refreshing records…');
       try {
-        const [employees, entries, audit] = await Promise.all([
+        const [employees, entries] = await Promise.all([
           state.db.from('employees').select('*').eq('active', true).order('last_name'),
-          fetchAllEntries(),
-          state.db.from('audit_log').select('*').order('occurred_at', { ascending:false }).limit(100)
+          fetchAllEntries()
         ]);
         if (employees.error) throw employees.error;
-        if (audit.error) throw audit.error;
         state.employees = employees.data || [];
         state.employeesById = new Map(state.employees.map(person => [person.id, person]));
         state.entries = entries;
-        state.audit = audit.data || [];
         renderFilterOptions();
         renderEmployees();
         renderDashboard();
