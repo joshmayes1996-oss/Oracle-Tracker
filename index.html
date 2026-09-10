@@ -35,6 +35,11 @@
     .card { margin-top:18px; padding:22px; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); box-shadow:0 18px 44px rgba(0,0,0,.18); }
     .hidden { display:none!important; }
     .employee-card { overflow:hidden; }
+    .employee-info { display:grid; grid-template-columns:1.15fr repeat(2,minmax(0,1fr)); gap:14px; margin-top:18px; }
+    .employee-info-card { min-height:142px; padding:20px; color:#dce6ee; background:linear-gradient(145deg,#17232d,#0d141b); border:1px solid rgba(176,200,218,.18); border-radius:14px; box-shadow:0 14px 30px rgba(0,0,0,.17); }
+    .employee-info-card h2 { color:#fff; }.employee-info-card p { margin:0; color:#bfcbd5; }
+    .employee-info-card .eyebrow { display:block; margin-bottom:7px; color:#ffb4a7; font-size:.75rem; font-weight:850; letter-spacing:.09em; text-transform:uppercase; }
+    .employee-info-card strong { color:#fff; }.system-online { color:#61d294!important; font-weight:800; }.system-online::before { content:''; display:inline-block; width:9px; height:9px; margin-right:7px; border-radius:50%; background:#3cc477; box-shadow:0 0 0 4px rgba(60,196,119,.13); }
     .clock-layout { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:28px; align-items:center; }
     h1,h2,h3,p { margin-top:0; } h1 { margin-bottom:4px; font-size:1.5rem; } h2 { margin-bottom:8px; font-size:1.28rem; } h3 { margin:0 0 10px; font-size:1rem; }
     .small { color:var(--muted); font-size:.9rem; }
@@ -88,7 +93,7 @@
     .login-actions { display:flex; gap:9px; flex-wrap:wrap; }
     @media (max-width:760px) {
       .app { padding:14px; }.head { align-items:flex-start; }.brand-copy { display:none; }.logo { width:116px; }.card { padding:16px; }
-      .clock-layout,.split,.stats { grid-template-columns:1fr; }.digital-clock { width:100%; min-width:0; }.field { flex-basis:100%; }.row button,.actions button { flex:1 1 auto; }
+      .clock-layout,.split,.stats,.employee-info { grid-template-columns:1fr; }.digital-clock { width:100%; min-width:0; }.field { flex-basis:100%; }.row button,.actions button { flex:1 1 auto; }
       .filters,.tools { align-items:stretch; }.filters .field,.tools .field { flex-basis:100%; }.check-field { min-height:36px; }.section-head .row { width:100%; }.section-head .row button { flex:1; }.now-grid { grid-template-columns:repeat(auto-fill,minmax(165px,1fr)); }
     }
     @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition:none!important; } }
@@ -125,6 +130,25 @@
           <span id="digitalDate">Loading time…</span>
         </aside>
       </div>
+    </section>
+
+    <section class="employee-info" aria-label="Employee clocking information">
+      <article class="employee-info-card">
+        <span class="eyebrow">Oracle Team Time</span>
+        <h2>Welcome</h2>
+        <p>Use this page to record the start and end of your shift. Your time is recorded in Central Time.</p>
+      </article>
+      <article class="employee-info-card">
+        <span class="eyebrow">Quick reminder</span>
+        <h2>Clock accurately</h2>
+        <p><strong>Check in</strong> when you begin work and <strong>check out</strong> when your shift ends. Add a note only when it helps explain your shift.</p>
+      </article>
+      <article class="employee-info-card">
+        <span class="eyebrow">Need help?</span>
+        <h2>System support</h2>
+        <p class="system-online">Time tracking system online</p>
+        <p style="margin-top:11px">If your name is missing or needs to be updated, contact your manager.</p>
+      </article>
     </section>
 
     <section id="dashboard" class="card hidden" aria-labelledby="managerTitle">
