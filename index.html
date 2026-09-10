@@ -52,9 +52,10 @@
     .digital-clock span { display:block; margin-top:7px; color:#cbd5dd; font-size:.79rem; }
     .message { min-height:23px; margin:13px 0 0; color:var(--muted); font-weight:650; }
     .message.success { color:var(--success); }.message.warning { color:var(--warning); }.message.error { color:var(--danger); }
+    .open-shift-warning { min-height:0; margin-top:8px; padding:10px 12px; color:#8a4b00; background:#fff5db; border:1px solid #f0c36c; border-radius:9px; font-size:.9rem; font-weight:700; }
     .section-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
     .manager-status { min-height:21px; margin:0; color:var(--muted); font-size:.9rem; }
-    .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+    .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
     .stat { padding:15px; background:linear-gradient(145deg,#fbfcfd,#eff3f6); border:1px solid #e4eaee; border-radius:12px; }
     .stat b { display:block; margin-bottom:3px; font-size:1.65rem; }
     .stat span { color:var(--muted); font-size:.84rem; font-weight:700; }
@@ -124,6 +125,7 @@
             <button id="clockOut" class="secondary" type="button">Check out</button>
           </div>
           <p id="message" class="message" aria-live="polite"></p>
+          <p id="openShiftWarning" class="open-shift-warning hidden" role="alert"></p>
         </div>
         <aside class="digital-clock" aria-label="Current Central time">
           <b id="digitalTime">--:--:--</b>
@@ -281,6 +283,11 @@
     function composeFotLevel(level, sublevel) { const main = clean(level), sub = clean(sublevel); return main ? (sub ? `${main} (${sub})` : main) : ''; }
 
     function setMessage(text = '', type = '') { const target = $('#message'); target.textContent = text; target.className = `message ${type}`; }
+    function setOpenShiftWarning(text = '') {
+      const target = $('#openShiftWarning');
+      target.textContent = text;
+      target.classList.toggle('hidden', !text);
+    }
     function setManagerStatus(text = '', type = '') { const target = $('#managerStatus'); target.textContent = text; target.className = `manager-status ${type}`; }
     function setLoginStatus(text = '', type = '') { const target = $('#loginStatus'); target.textContent = text; target.className = `message ${type}`; }
     function setPasswordChangeStatus(text = '', type = '') { const target = $('#passwordChangeStatus'); target.textContent = text; target.className = `message ${type}`; }
@@ -387,6 +394,7 @@
       if (!first || !last) return setMessage('Enter both your first and last name.', 'warning');
       const buttons = [$('#clockIn'), $('#clockOut')];
       buttons.forEach(button => button.disabled = true);
+      setOpenShiftWarning();
       setMessage(action === 'in' ? 'Checking you in…' : 'Checking you out…');
       try {
         const controller = new AbortController();
@@ -399,9 +407,16 @@
         const result = await response.json();
         if (!response.ok || result.error) throw new Error(result.error || 'Clock action failed.');
         setMessage(result.message || `You checked ${action === 'in' ? 'in' : 'out'}.`, 'success');
+        if (action === 'out') setOpenShiftWarning();
         if (action === 'in') $('#note').value = '';
       } catch (error) {
-        setMessage(error.message || 'Could not complete that clock action.', 'error');
+        const message = error.message || 'Could not complete that clock action.';
+        if (action === 'in' && /already\s+(checked|clocked)\s+in|open\s+shift/i.test(message)) {
+          setMessage('An open shift is already on record for this name.', 'warning');
+          setOpenShiftWarning('You are already clocked in. Please use Check out when your shift ends, or contact a manager if this is incorrect.');
+        } else {
+          setMessage(message, 'error');
+        }
       } finally {
         buttons.forEach(button => button.disabled = false);
       }
@@ -442,7 +457,10 @@
       const valid = state.entries.filter(entry => !entry.voided_at);
       const open = valid.filter(entry => !entry.check_out);
       const overdue = open.filter(entry => Date.now() - new Date(entry.check_in) > 18 * 3600000);
-      $('#stats').innerHTML = `<div class="stat"><b>${state.employees.length}</b><span>Active employees</span></div><div class="stat"><b>${open.length}</b><span>Clocked in now</span></div><div class="stat"><b>${valid.length}</b><span>Active time records</span></div>`;
+      const today = workDateKey(new Date());
+      const checkedInToday = new Set(valid.filter(entry => workDateKey(entry.check_in) === today).map(entry => entry.employee_id));
+      const notCheckedInToday = Math.max(0, state.employees.length - checkedInToday.size);
+      $('#stats').innerHTML = `<div class="stat"><b>${state.employees.length}</b><span>Active roster</span></div><div class="stat"><b>${checkedInToday.size}</b><span>Checked in today</span></div><div class="stat"><b>${open.length}</b><span>Clocked in now</span></div><div class="stat"><b>${notCheckedInToday}</b><span>Not checked in today</span></div>`;
       $('#warning').textContent = overdue.length ? `${overdue.length} open shift${overdue.length === 1 ? '' : 's'} started more than 18 hours ago. Review the records below.` : '';
       if (!open.length) {
         $('#clockedNow').innerHTML = '<div class="now-card small">No employees are currently clocked in.</div>';
@@ -530,6 +548,7 @@
 
     $('#clockIn').addEventListener('click', () => clock('in'));
     $('#clockOut').addEventListener('click', () => clock('out'));
+    ['first', 'last'].forEach(id => $(`#${id}`).addEventListener('input', () => setOpenShiftWarning()));
     $('#managerButton').addEventListener('click', () => { setLoginStatus(); $('#login').showModal(); $('#email').focus(); });
     $('#cancelLogin').addEventListener('click', () => $('#login').close());
     $('#loginForm').addEventListener('submit', async event => {
