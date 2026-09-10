@@ -81,11 +81,12 @@
     .now-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(205px,1fr)); gap:10px; padding:11px; }
     .now-card { padding:12px; background:var(--soft); border:1px solid #e4eaee; border-radius:11px; }
     .now-card b { display:block; margin-bottom:3px; }.status-void { color:var(--danger); font-weight:750; }.voided { background:#fff7f5; opacity:.76; }
-    .roster-row-in { background:#ecf9f0; }.roster-row-out { background:#fff1f0; }
+    .roster-row-in { background:#ecf9f0; }.roster-row-out { background:#fff1f0; }.roster-row-accounted { background:#fff8e5; }
     .roster-name { display:inline-flex; align-items:center; gap:7px; font-weight:800; }
     .roster-name::before { content:''; width:9px; height:9px; border-radius:999px; background:currentColor; }
-    .roster-name.in { color:#137445; }.roster-name.out { color:#b12f25; }
-    .clock-status { font-weight:800; }.clock-status.in { color:#137445; }.clock-status.out { color:#b12f25; }
+    .roster-name.in { color:#137445; }.roster-name.out { color:#b12f25; }.roster-name.accounted { color:#986000; }
+    .clock-status { font-weight:800; }.clock-status.in { color:#137445; }.clock-status.out { color:#b12f25; }.clock-status.accounted { color:#986000; }
+    .attendance-note { display:block; max-width:220px; margin-top:4px; color:var(--muted); font-size:.78rem; font-weight:600; }
     .empty { padding:20px; color:var(--muted); text-align:center; }
     dialog { width:min(420px,calc(100% - 32px)); padding:0; color:var(--ink); border:0; border-radius:16px; box-shadow:0 24px 70px rgba(0,0,0,.45); }
     dialog.wide { width:min(680px,calc(100% - 32px)); }
@@ -244,6 +245,24 @@
     </form>
   </dialog>
 
+  <dialog id="calloutEditor">
+    <form id="calloutForm">
+      <h2>Daily attendance status</h2>
+      <p id="calloutEmployeeSummary" class="small"></p>
+      <input id="calloutEmployeeId" type="hidden">
+      <label class="field">Status
+        <select id="calloutStatus">
+          <option value="">Clear status</option>
+          <option>Called out</option><option>PTO</option><option>Late</option><option>Training</option><option>Off site</option><option>Scheduled off</option><option>No call / no show</option>
+        </select>
+      </label>
+      <label class="field">Manager note <span class="small">(optional)</span><textarea id="calloutNote" placeholder="Example: Called at 6:30 AM — sick"></textarea></label>
+      <p class="small">This status applies to today only and is cleared automatically from the dashboard tomorrow.</p>
+      <p id="calloutStatusMessage" class="message" aria-live="polite"></p>
+      <div class="login-actions"><button id="saveCallout" type="submit">Save status</button><button id="cancelCallout" class="secondary" type="button">Cancel</button></div>
+    </form>
+  </dialog>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     const PROJECT_URL = 'https://dbaiwdatialqkywacxok.supabase.co';
@@ -292,6 +311,12 @@
     function setLoginStatus(text = '', type = '') { const target = $('#loginStatus'); target.textContent = text; target.className = `message ${type}`; }
     function setPasswordChangeStatus(text = '', type = '') { const target = $('#passwordChangeStatus'); target.textContent = text; target.className = `message ${type}`; }
     function setRecordEditorStatus(text = '', type = '') { const target = $('#recordEditorStatus'); target.textContent = text; target.className = `message ${type}`; }
+    function setCalloutStatusMessage(text = '', type = '') { const target = $('#calloutStatusMessage'); target.textContent = text; target.className = `message ${type}`; }
+    function calloutFor(person = {}) {
+      return person.attendance_status && person.attendance_date === workDateKey(new Date())
+        ? { status:person.attendance_status, note:person.attendance_note || '' }
+        : null;
+    }
     function hours(entry) { return Math.max(0, ((entry.check_out ? new Date(entry.check_out) : new Date()) - new Date(entry.check_in)) / 3600000); }
 
     function updateDigitalClock() {
@@ -377,6 +402,19 @@
       setTimeout(() => $('#editCheckIn').focus(), 0);
     }
     function closeRecordEditor() { if ($('#recordEditor').open) $('#recordEditor').close(); }
+    function openCalloutEditor(id) {
+      const person = state.employeesById.get(id);
+      if (!person) return setManagerStatus('That employee is no longer active. Refresh the dashboard and try again.', 'warning');
+      const callout = calloutFor(person);
+      $('#calloutEmployeeId').value = id;
+      $('#calloutEmployeeSummary').textContent = `${person.first_name || ''} ${person.last_name || ''} · ${person.team || 'No team assigned'}`.trim();
+      $('#calloutStatus').value = callout?.status || '';
+      $('#calloutNote').value = callout?.note || '';
+      setCalloutStatusMessage();
+      if (!$('#calloutEditor').open) $('#calloutEditor').showModal();
+      setTimeout(() => $('#calloutStatus').focus(), 0);
+    }
+    function closeCalloutEditor() { if ($('#calloutEditor').open) $('#calloutEditor').close(); }
 
     async function fetchAllEntries() {
       const pageSize = 1000;
@@ -448,9 +486,14 @@
     }
     function renderEmployees() {
       const openIds = new Set(state.entries.filter(entry => !entry.voided_at && !entry.check_out).map(entry => entry.employee_id));
-      $('#employees').innerHTML = table(['Name','Team','FOT level','Confirmed specialty','Clock status','Actions'], state.employees.map(person => {
-        const profile = profileFor(person), clockedIn = openIds.has(person.id);
-        return `<tr class="${clockedIn ? 'roster-row-in' : 'roster-row-out'}"><td><span class="roster-name ${clockedIn ? 'in' : 'out'}">${esc(person.first_name)} ${esc(person.last_name)}</span></td><td>${esc(person.team)}</td><td>${esc(profile.fot_level || '—')}</td><td>${esc(profile.confirmed_specialty || '—')}</td><td><span class="clock-status ${clockedIn ? 'in' : 'out'}">${clockedIn ? 'Clocked in' : 'Not clocked in'}</span></td><td><div class="row"><button class="secondary" type="button" data-edit-employee="${person.id}">Edit</button><button class="danger" type="button" data-archive="${person.id}">Archive</button></div></td></tr>`;
+      $('#employees').innerHTML = table(['Name','Team','FOT level','Confirmed specialty','Clock status','Daily status','Actions'], state.employees.map(person => {
+        const profile = profileFor(person), clockedIn = openIds.has(person.id), callout = calloutFor(person);
+        const rowClass = clockedIn ? 'roster-row-in' : callout ? 'roster-row-accounted' : 'roster-row-out';
+        const nameClass = clockedIn ? 'in' : callout ? 'accounted' : 'out';
+        const status = clockedIn ? 'Clocked in' : callout ? callout.status : 'Not clocked in';
+        const statusClass = clockedIn ? 'in' : callout ? 'accounted' : 'out';
+        const dailyStatus = callout ? `<span class="clock-status accounted">${esc(callout.status)}</span>${callout.note ? `<span class="attendance-note">${esc(callout.note)}</span>` : ''}` : '—';
+        return `<tr class="${rowClass}"><td><span class="roster-name ${nameClass}">${esc(person.first_name)} ${esc(person.last_name)}</span></td><td>${esc(person.team)}</td><td>${esc(profile.fot_level || '—')}</td><td>${esc(profile.confirmed_specialty || '—')}</td><td><span class="clock-status ${statusClass}">${esc(status)}</span></td><td>${dailyStatus}</td><td><div class="row"><button class="secondary" type="button" data-callout="${person.id}">Set status</button><button class="secondary" type="button" data-edit-employee="${person.id}">Edit</button><button class="danger" type="button" data-archive="${person.id}">Archive</button></div></td></tr>`;
       }), 'No active employees yet.');
     }
     function renderStats() {
@@ -459,8 +502,9 @@
       const overdue = open.filter(entry => Date.now() - new Date(entry.check_in) > 18 * 3600000);
       const today = workDateKey(new Date());
       const checkedInToday = new Set(valid.filter(entry => workDateKey(entry.check_in) === today).map(entry => entry.employee_id));
-      const notCheckedInToday = Math.max(0, state.employees.length - checkedInToday.size);
-      $('#stats').innerHTML = `<div class="stat"><b>${state.employees.length}</b><span>Active roster</span></div><div class="stat"><b>${checkedInToday.size}</b><span>Checked in today</span></div><div class="stat"><b>${open.length}</b><span>Clocked in now</span></div><div class="stat"><b>${notCheckedInToday}</b><span>Not checked in today</span></div>`;
+      const accountedNotCheckedIn = state.employees.filter(person => !checkedInToday.has(person.id) && calloutFor(person)).length;
+      const notCheckedInToday = Math.max(0, state.employees.length - checkedInToday.size - accountedNotCheckedIn);
+      $('#stats').innerHTML = `<div class="stat"><b>${state.employees.length}</b><span>Active roster</span></div><div class="stat"><b>${checkedInToday.size}</b><span>Checked in today</span></div><div class="stat"><b>${accountedNotCheckedIn}</b><span>Accounted for</span></div><div class="stat"><b>${open.length}</b><span>Clocked in now</span></div><div class="stat"><b>${notCheckedInToday}</b><span>Needs attention</span></div>`;
       $('#warning').textContent = overdue.length ? `${overdue.length} open shift${overdue.length === 1 ? '' : 's'} started more than 18 hours ago. Review the records below.` : '';
       if (!open.length) {
         $('#clockedNow').innerHTML = '<div class="now-card small">No employees are currently clocked in.</div>';
@@ -605,7 +649,7 @@
         setManagerStatus(`Could not save roster details: ${detail}.${hint}`, 'error');
       });
     });
-    $('#signOut').addEventListener('click', async () => { await state.db.auth.signOut(); localStorage.removeItem('oracle-time-safety-snapshot'); closePasswordChange(); closeRecordEditor(); clearEmployeeEditor(); $('#dashboard').classList.add('hidden'); setManagerStatus(); });
+    $('#signOut').addEventListener('click', async () => { await state.db.auth.signOut(); localStorage.removeItem('oracle-time-safety-snapshot'); closePasswordChange(); closeRecordEditor(); closeCalloutEditor(); clearEmployeeEditor(); $('#dashboard').classList.add('hidden'); setManagerStatus(); });
     $('#add').addEventListener('click', async () => {
       if (!state.db) return;
       const first = clean($('#newFirst').value), last = clean($('#newLast').value);
@@ -626,6 +670,8 @@
     $('#employees').addEventListener('click', async event => {
       const button = event.target.closest('button');
       if (!button) return;
+      const calloutId = button.dataset.callout;
+      if (calloutId) return openCalloutEditor(calloutId);
       const editId = button.dataset.editEmployee;
       if (editId) return beginEmployeeEdit(editId);
       const id = button.dataset.archive;
@@ -635,6 +681,27 @@
       if (state.editingEmployeeId === id) clearEmployeeEditor();
       await loadDashboard(false);
       setManagerStatus('Employee archived.', 'success');
+    });
+    $('#cancelCallout').addEventListener('click', closeCalloutEditor);
+    $('#calloutForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const id = $('#calloutEmployeeId').value;
+      const person = state.employeesById.get(id);
+      if (!state.db || !person) return setCalloutStatusMessage('This employee is no longer available. Refresh and try again.', 'error');
+      const status = clean($('#calloutStatus').value);
+      const note = clean($('#calloutNote').value);
+      await withButton($('#saveCallout'), 'Saving…', async () => {
+        setCalloutStatusMessage();
+        const payload = status
+          ? { attendance_status:status, attendance_note:note || null, attendance_date:workDateKey(new Date()) }
+          : { attendance_status:null, attendance_note:null, attendance_date:null };
+        const { data, error } = await state.db.from('employees').update(payload).eq('id', id).select('id');
+        if (error) throw error;
+        if (!data || data.length !== 1) throw new Error('The status could not be saved. Refresh and try again.');
+        closeCalloutEditor();
+        await loadDashboard(false);
+        setManagerStatus(status ? `${person.first_name} ${person.last_name} marked ${status} for today.` : `Daily status cleared for ${person.first_name} ${person.last_name}.`, 'success');
+      }).catch(error => setCalloutStatusMessage(error.message || 'Could not save the daily status.', 'error'));
     });
     $('#records').addEventListener('click', async event => {
       const button = event.target.closest('button');
