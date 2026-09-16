@@ -60,6 +60,15 @@
     .stat b { display:block; margin-bottom:3px; font-size:1.65rem; }
     .stat span { color:var(--muted); font-size:.84rem; font-weight:700; }
     .warning { color:var(--warning); font-weight:650; }
+    .late-arrivals { margin-top:18px; padding:16px; background:#fff8e8; border:1px solid #f0cf85; border-radius:13px; }
+    .late-arrivals-head { display:flex; align-items:start; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    .late-arrivals h2 { margin:0; font-size:1.05rem; color:#6f4100; }
+    .late-arrivals p { margin:4px 0 0; }
+    .late-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; margin-top:12px; }
+    .late-card { padding:12px; background:#fff; border:1px solid #f0d9a2; border-radius:10px; }
+    .late-card b { display:block; color:#573200; }
+    .late-card span { display:block; margin-top:4px; color:#775319; font-size:.88rem; font-weight:700; }
+    .late-none { padding:11px; margin-top:12px; color:#53616d; background:#fff; border:1px solid #f0d9a2; border-radius:10px; font-weight:650; }
     .split { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:18px; margin-top:20px; }
     .subpanel { padding:17px; background:var(--soft); border:1px solid #e4eaee; border-radius:13px; }
     .table-wrap { overflow:auto; border:1px solid var(--line); border-radius:11px; background:#fff; }
@@ -161,6 +170,10 @@
       </div>
       <div id="stats" class="stats"></div>
       <p id="warning" class="message warning"></p>
+      <section class="late-arrivals" aria-labelledby="lateArrivalsTitle">
+        <div class="late-arrivals-head"><div><h2 id="lateArrivalsTitle">Late arrivals</h2><p class="small">First check-in after 8:00 AM Central time.</p></div><span id="lateArrivalCount" class="clock-status accounted">0 late today</span></div>
+        <div id="lateArrivals" aria-live="polite"></div>
+      </section>
       <div id="clockedNow" class="clocked-now" aria-live="polite"></div>
 
       <div class="split">
@@ -316,6 +329,10 @@
       return person.attendance_status && person.attendance_date === workDateKey(new Date())
         ? { status:person.attendance_status, note:person.attendance_note || '' }
         : null;
+    }
+    function workMinutes(value) {
+      const parts = Object.fromEntries(workDateTimeInputFormat.formatToParts(new Date(value)).filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+      return Number(parts.hour) * 60 + Number(parts.minute);
     }
     function hours(entry) { return Math.max(0, ((entry.check_out ? new Date(entry.check_out) : new Date()) - new Date(entry.check_in)) / 3600000); }
 
@@ -502,10 +519,26 @@
       const overdue = open.filter(entry => Date.now() - new Date(entry.check_in) > 18 * 3600000);
       const today = workDateKey(new Date());
       const checkedInToday = new Set(valid.filter(entry => workDateKey(entry.check_in) === today).map(entry => entry.employee_id));
+      const firstCheckInByEmployee = new Map();
+      valid.filter(entry => workDateKey(entry.check_in) === today).forEach(entry => {
+        const current = firstCheckInByEmployee.get(entry.employee_id);
+        if (!current || new Date(entry.check_in) < new Date(current.check_in)) firstCheckInByEmployee.set(entry.employee_id, entry);
+      });
+      const lateArrivals = [...firstCheckInByEmployee.values()]
+        .filter(entry => workMinutes(entry.check_in) > 8 * 60)
+        .sort((a, b) => new Date(a.check_in) - new Date(b.check_in));
       const accountedNotCheckedIn = state.employees.filter(person => !checkedInToday.has(person.id) && calloutFor(person)).length;
       const notCheckedInToday = Math.max(0, state.employees.length - checkedInToday.size - accountedNotCheckedIn);
       $('#stats').innerHTML = `<div class="stat"><b>${state.employees.length}</b><span>Active roster</span></div><div class="stat"><b>${checkedInToday.size}</b><span>Checked in today</span></div><div class="stat"><b>${accountedNotCheckedIn}</b><span>Accounted for</span></div><div class="stat"><b>${open.length}</b><span>Clocked in now</span></div><div class="stat"><b>${notCheckedInToday}</b><span>Needs attention</span></div>`;
       $('#warning').textContent = overdue.length ? `${overdue.length} open shift${overdue.length === 1 ? '' : 's'} started more than 18 hours ago. Review the records below.` : '';
+      $('#lateArrivalCount').textContent = `${lateArrivals.length} late today`;
+      $('#lateArrivals').innerHTML = lateArrivals.length
+        ? `<div class="late-grid">${lateArrivals.map(entry => {
+          const person = entry.employees || state.employeesById.get(entry.employee_id) || {};
+          const minutesLate = workMinutes(entry.check_in) - (8 * 60);
+          return `<article class="late-card"><b>${esc(person.first_name || 'Unknown')} ${esc(person.last_name || 'employee')}</b><span>Checked in ${esc(workTime(entry.check_in))} · ${minutesLate} minute${minutesLate === 1 ? '' : 's'} late</span></article>`;
+        }).join('')}</div>`
+        : '<div class="late-none">No late arrivals today.</div>';
       if (!open.length) {
         $('#clockedNow').innerHTML = '<div class="now-card small">No employees are currently clocked in.</div>';
         return;
